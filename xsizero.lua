@@ -2,23 +2,25 @@
 --X si Zero (The Game!!!)
 --Autori: Ioana Popa & Cosmin Apreutesei. Public Domain.
 
-a = {
+local nw = require'nw'
+local ffi = require'ffi'
+
+--logica jocului -------------------------------------------------------------
+
+local a = {
 	{' ', ' ', ' '},
 	{' ', ' ', ' '},
 	{' ', ' ', ' '},
 }
 
-function play_round(x, y, symbol) --'X', '0'
+local function play_round(x, y, symbol) --'X', '0'
 	if a[y][x] ~= ' ' then
 		error'nu se poate'
 	end
 	a[y][x] = symbol
 end
 
-function f(symbol)
-
-	--return symbol == ' ' and '_' or symbol
-
+local function f(symbol)
 	if symbol == ' ' then
 		return '_'
 	else
@@ -26,13 +28,13 @@ function f(symbol)
 	end
 end
 
-function show_board()
+local function show_board()
 	for y=1,3 do
 		print(f(a[y][1]), f(a[y][2]), f(a[y][3]))
 	end
 end
 
-function check_status()
+local function check_status()
 
 	--verificam daca s-a castigat pe orizontala
 	for y=1,3 do
@@ -86,7 +88,7 @@ function check_status()
 
 end
 
-function test1()
+local function test1()
 	play_round(2, 2, 'X')
 	print(check_status())
 
@@ -121,4 +123,48 @@ function test1()
 	show_board()
 end
 
---test1()
+--interfata grafica ----------------------------------------------------------
+
+local app = nw:app()
+
+local win = app:window{
+   w = 400, h = 200,
+   title = 'X si Zero',
+	--visible = false,
+}
+
+function win:repaint()
+	local bmp = self:bitmap()
+	local p = ffi.cast('uint8_t*', bmp.data)
+
+	local function setpixel(x, y, r, g, b)
+		p[(y * bmp.w + x) * 4 + 2] = r
+		p[(y * bmp.w + x) * 4 + 1] = g
+		p[(y * bmp.w + x) * 4 + 0] = b
+	end
+
+	local function vline(x, y, length, r, g, b)
+		--
+	end
+
+	local function hline(x, y, length, r, g, b)
+		--
+	end
+
+	local function diagonal(x, y, bb_length, r, g, b)
+		--
+	end
+
+	local function circle(cx, cy, r)
+		--
+	end
+
+	for y=0,bmp.h-1 do
+		for x=0,bmp.w-1 do
+			p[(y * bmp.w + x) * 4 + 2] = 255
+		end
+	end
+end
+
+app:run()
+
