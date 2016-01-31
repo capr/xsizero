@@ -2,6 +2,8 @@
 --X si Zero (The Game!!!)
 --Autori: Ioana Popa & Cosmin Apreutesei. Public Domain.
 
+if ... == 'xsizero' then return end --prevent using as module
+
 local nw = require'nw'
 local ffi = require'ffi'
 
