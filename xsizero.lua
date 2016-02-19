@@ -17,9 +17,10 @@ local a = {
 
 local function play_round(x, y, symbol) --'X', '0'
 	if a[y][x] ~= ' ' then
-		error'nu se poate'
+		print'nu se poate'
+	else
+		a[y][x] = symbol
 	end
-	a[y][x] = symbol
 end
 
 local function f(symbol)
@@ -90,41 +91,6 @@ local function check_status()
 
 end
 
-local function test1()
-	play_round(2, 2, 'X')
-	print(check_status())
-
-	play_round(1, 1, '0')
-	print(check_status())
-
-	play_round(1, 2, 'X')
-	print(check_status())
-
-	play_round(1, 3, '0')
-	print(check_status())
-
-	play_round(2, 1, 'X')
-	print(check_status())
-
-	play_round(2, 3, '0')
-	print(check_status())
-
-	play_round(3, 1, 'X')
-	print(check_status())
-
-	play_round(3, 3, 'X')
-	print(check_status())
-
-	play_round(3, 2, '0')
-	print(check_status())
-
-	if check_status() ~= 'remiza' then
-		error'trebuia sa fie remiza'
-	end
-
-	show_board()
-end
-
 --interfata grafica ----------------------------------------------------------
 
 local app = nw:app()
@@ -135,6 +101,35 @@ local win = app:window{
 	--visible = false,
 }
 
+--center a rectangle in another
+local function center_rect(w1, h1, x, y, w, h)
+	local x1 = (w - w1) / 2 + x
+	local y1 = (h - h1) / 2 + y
+	return x1, y1
+end
+
+local function board_rectangle(win_w, win_h)
+	local w1, h1 = 200, 200
+	local x1, y1 = center_rect(w1, h1, 0, 0, win_w, win_h)
+	return x1, y1, w1, h1
+end
+
+--transform a point from (3*3) game space to (w*h) window space
+local function map_point_to_window(x, y, x1, y1, w1, h1)
+	local x2 = x / 3 * w1 - w1 / 6 + x1
+	local y2 = y / 3 * h1 - h1 / 6 + y1
+	return x2, y2
+end
+
+--transform a point from (w*h) window space to (3*3) game space
+local function map_point_to_game(x, y, x1, y1, w1, h1)
+	local x2 = math.floor(3 / (w1 - 1) * (x - x1)) + 1
+	local y2 = math.floor(3 / (h1 - 1) * (y - y1)) + 1
+	return x2, y2
+end
+
+local mouse_x, mouse_y = 0, 0
+
 function win:repaint()
 
 	local bmp = self:bitmap()
@@ -143,6 +138,8 @@ function win:repaint()
 	local function setpixel(x, y, r, g, b)
 		x = math.floor(x)
 		y = math.floor(y)
+		if x < 0 then return end
+		if y < 0 then return end
 		if x > bmp.w - 1 then return end
 		if y > bmp.h - 1 then return end
 		p[(y * bmp.w + x) * 4 + 2] = r
@@ -185,7 +182,7 @@ function win:repaint()
 	local function diagonal2(x0, y0, bb_length, thickness, r, g, b)
 		local c = thickness
 		local a = math.sqrt(c^2 / 2) --teorema lui pitagora
-		local x1 = x0 + a / 2
+		local x1 = x0 - a / 2
 		local y1 = y0 - a / 2
 		a = math.floor(a) --a is from a^2 + a^2 = c^2
 		for i = 0, a - 1 do
@@ -209,32 +206,16 @@ function win:repaint()
 		end
 	end
 
-	--center a rectangle in another
-	local function center_rect(w1, h1, x, y, w, h)
-		local x1 = (w - w1) / 2 + x
-		local y1 = (h - h1) / 2 + y
-		return x1, y1
-	end
-
-	--transform a point from (3*3) game space to (w*h) window space
-	local function transform_point(x, y, x1, y1, w1, h1)
-		local x2 = x / 3 * w1 - w1 / 6 + x1
-		local y2 = y / 3 * h1 - h1 / 6 + y1
-		return x2, y2
-	end
-
-	--board rectangle
-	local w1, h1 = 200, 200
-	local x1, y1 = center_rect(w1, h1, 0, 0, bmp.w, bmp.h)
+	local x1, y1, w1, h1 = board_rectangle(bmp.w, bmp.h)
 
 	local function draw_zero(x, y)
-		local cx, cy = transform_point(x, y, x1, y1, w1, h1)
-		circle(cx, cy, 20, 4, 255, 255, 255)
+		local cx, cy = map_point_to_window(x, y, x1, y1, w1, h1)
+		circle(cx, cy, 20, 15, 255, 255, 255)
 	end
 
 	local function draw_x(x, y)
 		local t = 50
-		local cx, cy = transform_point(x, y, x1, y1, w1, h1)
+		local cx, cy = map_point_to_window(x, y, x1, y1, w1, h1)
 		local x2 = cx - t / 2
 		local y2 = cy - t / 2
 		diagonal1(x2, y2, t, 20, 255, 255, 255)
@@ -242,16 +223,56 @@ function win:repaint()
 		diagonal2(x2, y2, t, 20, 255, 255, 255)
 	end
 
+	--stergem ecranul
+	rectangle(0, 0, bmp.w, bmp.h, 0, 0, 0)
+
+	--desenam backgroundul gridului
 	rectangle(x1, y1, w1, h1, 20, 20, 20)
+
+	--desenam liniile gridului
 	for x=0,3 do
 		vline(x1 + x * (w1 / 3), y1, h1, 1, 255, 255, 255)
 	end
 	for y=0,3 do
 		hline(x1, y1 + y * (h1 / 3), w1, 1, 255, 255, 255)
 	end
-	draw_zero(2, 2)
-	draw_x(3, 3)
 
+	--desenam piesele
+	for x = 1, 3 do
+		for y = 1, 3 do
+			local v = a[y][x]
+			if v == 'X' then
+				draw_x(x, y)
+			elseif v == '0' then
+				draw_zero(x, y)
+			end
+		end
+	end
+
+	--desenam mouse-ul
+	circle(mouse_x, mouse_y, 5, 15, 255, 255, 255)
+end
+
+function win:mousemove(x, y)
+	mouse_x, mouse_y = x, y
+	win:invalidate()
+end
+
+local last_move
+
+function win:click(button, _, x, y)
+	local cw, ch = self:client_size()
+	local x1, y1, w1, h1 = board_rectangle(cw, ch)
+	local x, y = map_point_to_game(x, y, x1, y1, w1, h1)
+	if x >= 1 and x <= 3 and y >= 1 and y <= 3 then
+		if last_move == 'X' then
+			last_move = '0'
+		else
+			last_move = 'X'
+		end
+		play_round(x, y, last_move)
+		print(check_status())
+	end
 end
 
 app:run()
