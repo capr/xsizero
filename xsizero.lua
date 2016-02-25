@@ -5,23 +5,23 @@
 if ... == 'xsizero' then return end --prevent using as module
 
 local nw = require'nw'
+local cairo = require'cairo'
 local ffi = require'ffi'
 
 --logica jocului -------------------------------------------------------------
 
-local a = {
+local board = {
 	{' ', ' ', ' '},
 	{' ', ' ', ' '},
 	{' ', ' ', ' '},
 }
 
-local function play_round(x, y, symbol) --'X', '0'
-	if a[y][x] ~= ' ' then
-		print'nu se poate'
-	else
-		a[y][x] = symbol
-	end
-end
+local score_table = {
+	['X'] = 0,
+	['0'] = 0,
+}
+
+local game_status, winning_dir, winning_xy = 'continue'
 
 local function f(symbol)
 	if symbol == ' ' then
@@ -33,7 +33,7 @@ end
 
 local function show_board()
 	for y=1,3 do
-		print(f(a[y][1]), f(a[y][2]), f(a[y][3]))
+		print(f(board[y][1]), f(board[y][2]), f(board[y][3]))
 	end
 end
 
@@ -42,46 +42,46 @@ local function check_status()
 	--verificam daca s-a castigat pe orizontala
 	for y=1,3 do
 		if
-			a[y][1] == a[y][2] and
-			a[y][2] == a[y][3] and
-			a[y][1] ~= ' '
+			board[y][1] == board[y][2] and
+			board[y][2] == board[y][3] and
+			board[y][1] ~= ' '
 		then
-			return 'castigat'
+			return 'won', 'horizontal', y
 		end
 	end
 
 	--verificam daca s-a castigat pe verticala
 	for x=1,3 do
 		if
-			a[1][x] == a[2][x] and
-			a[2][x] == a[3][x] and
-			a[1][x] ~= ' '
+			board[1][x] == board[2][x] and
+			board[2][x] == board[3][x] and
+			board[1][x] ~= ' '
 		then
-			return 'castigat'
+			return 'won', 'vertical', x
 		end
 	end
 
-	--verificam daca s-a castigat pe diagonala
-	if
-		(
-			a[1][1] == a[2][2] and
-			a[2][2] == a[3][3] and
-			a[1][1] ~= ' '
-		) or
-		(
-			a[3][3] == a[2][2] and
-			a[2][2] == a[1][1] and
-			a[3][3] ~= ' '
-		)
+	--verificam daca s-a castigat pe diagonala1
+	if board[1][1] == board[2][2] and
+		board[2][2] == board[3][3] and
+		board[1][1] ~= ' '
 	then
-		return 'castigat'
+		return 'won', 'diagonal1'
+	end
+
+	--verificam daca s-a castigat pe diagonala2
+	if board[1][3] == board[2][2] and
+		board[2][2] == board[3][1] and
+		board[1][3] ~= ' '
+	then
+		return 'won', 'diagonal2'
 	end
 
 	--verificam daca mai e loc pe tabla
 	for x=1,3 do
 		for y=1,3 do
-			if a[y][x] == ' ' then
-				return 'continuati'
+			if board[y][x] == ' ' then
+				return 'continue'
 			end
 		end
 	end
@@ -91,15 +91,16 @@ local function check_status()
 
 end
 
---interfata grafica ----------------------------------------------------------
+local function play_round(x, y, symbol) --'X', '0'
+	if board[y][x] ~= ' ' then
+		print'nu se poate'
+	else
+		board[y][x] = symbol
+	end
+	game_status, winning_dir, winning_xy = check_status()
+end
 
-local app = nw:app()
-
-local win = app:window{
-   cw = 400, ch = 300,
-   title = 'X si Zero',
-	--visible = false,
-}
+--utils ----------------------------------------------------------------------
 
 --center a rectangle in another
 local function center_rect(w1, h1, x, y, w, h)
@@ -108,10 +109,34 @@ local function center_rect(w1, h1, x, y, w, h)
 	return x1, y1
 end
 
-local function board_rectangle(win_w, win_h)
-	local w1, h1 = 200, 200
-	local x1, y1 = center_rect(w1, h1, 0, 0, win_w, win_h)
-	return x1, y1, w1, h1
+local function point_inside_rect(mx, my, x, y, w, h)
+	return
+		mx >= x and mx <= x + w and
+		my >= y and my <= y + h
+end
+
+--interfata grafica ----------------------------------------------------------
+
+local app = nw:app()
+
+--center the window to the active screen
+local win_cw, win_ch = 600, 300
+local disp = app:active_display()
+local x, y, w, h = disp:screen_rect()
+local win_x, win_y = center_rect(win_cw, win_ch, x, y, w, h)
+
+local win = app:window{
+	x = win_x, y = win_y,
+	cw = win_cw, ch = win_ch,
+	title = 'X si Zero',
+	--visible = false,
+	resizeable = false,
+	maximizable = false,
+	fullscreenable = false,
+}
+
+local function board_rectangle()
+	return 50, 50, 200, 200
 end
 
 --transform a point from (3*3) game space to (w*h) window space
@@ -133,6 +158,8 @@ local mouse_x, mouse_y = 0, 0
 function win:repaint()
 
 	local bmp = self:bitmap()
+	local cr = bmp:cairo()
+
 	local p = ffi.cast('uint8_t*', bmp.data)
 
 	local function setpixel(x, y, r, g, b)
@@ -206,7 +233,7 @@ function win:repaint()
 		end
 	end
 
-	local x1, y1, w1, h1 = board_rectangle(bmp.w, bmp.h)
+	local x1, y1, w1, h1 = board_rectangle()
 
 	local function draw_zero(x, y)
 		local cx, cy = map_point_to_window(x, y, x1, y1, w1, h1)
@@ -226,21 +253,18 @@ function win:repaint()
 	--stergem ecranul
 	rectangle(0, 0, bmp.w, bmp.h, 0, 0, 0)
 
-	--desenam backgroundul gridului
-	rectangle(x1, y1, w1, h1, 20, 20, 20)
-
 	--desenam liniile gridului
-	for x=0,3 do
+	for x=1,2 do
 		vline(x1 + x * (w1 / 3), y1, h1, 1, 255, 255, 255)
 	end
-	for y=0,3 do
+	for y=1,2 do
 		hline(x1, y1 + y * (h1 / 3), w1, 1, 255, 255, 255)
 	end
 
 	--desenam piesele
 	for x = 1, 3 do
 		for y = 1, 3 do
-			local v = a[y][x]
+			local v = board[y][x]
 			if v == 'X' then
 				draw_x(x, y)
 			elseif v == '0' then
@@ -249,20 +273,62 @@ function win:repaint()
 		end
 	end
 
+	--desenam starea jocului
+	if game_status == 'won' then
+		if winning_dir == 'horizontal' then
+			local x, y = map_point_to_window(0.5, winning_xy, x1, y1, w1, h1)
+			hline(x, y, w1, 10, 255, 0, 0)
+		elseif winning_dir == 'vertical' then
+			local x, y = map_point_to_window(winning_xy, 0.5, x1, y1, w1, h1)
+			vline(x, y, h1, 10, 255, 0, 0)
+		elseif winning_dir == 'diagonal1' then
+			local x, y = map_point_to_window(0.5, 0.5, x1, y1, w1, h1)
+			diagonal1(x, y, w1, 10, 255, 0, 0)
+		elseif winning_dir == 'diagonal2' then
+			local x, y = map_point_to_window(3.5, 0.5, x1, y1, w1, h1)
+			diagonal2(x, y, w1, 10, 255, 0, 0)
+		end
+	end
+
+	local x, y = 300, 100
+	local s = 'R3START'
+
+	cr:rgb(1, 1, 1)
+	cr:move_to(x, y)
+	cr:font_face('Arial', nil, 'bold')
+	cr:font_size(36)
+
+	--compute the bounding box of the text
+	local ext = cr:text_extents(s)
+	local ext_x = x + ext.x_bearing
+	local ext_y = y + ext.y_bearing
+	local ext_w = ext.width
+	local ext_h = ext.height
+
+	local over_the_text = point_inside_rect(
+		mouse_x, mouse_y,
+		ext_x, ext_y, ext_w, ext_h)
+
+	if over_the_text then
+		cr:rgb(1, 1, 0)
+	end
+
+	cr:show_text(s)
+
 	--desenam mouse-ul
-	circle(mouse_x, mouse_y, 5, 15, 255, 255, 255)
+	circle(mouse_x, mouse_y, 3, 3, 255, 255, 255)
 end
 
 function win:mousemove(x, y)
 	mouse_x, mouse_y = x, y
-	win:invalidate()
+	self:invalidate()
 end
 
 local last_move
 
 function win:click(button, _, x, y)
 	local cw, ch = self:client_size()
-	local x1, y1, w1, h1 = board_rectangle(cw, ch)
+	local x1, y1, w1, h1 = board_rectangle()
 	local x, y = map_point_to_game(x, y, x1, y1, w1, h1)
 	if x >= 1 and x <= 3 and y >= 1 and y <= 3 then
 		if last_move == 'X' then
@@ -271,7 +337,7 @@ function win:click(button, _, x, y)
 			last_move = 'X'
 		end
 		play_round(x, y, last_move)
-		print(check_status())
+		self:invalidate()
 	end
 end
 
