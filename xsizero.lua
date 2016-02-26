@@ -10,18 +10,16 @@ local ffi = require'ffi'
 
 --logica jocului -------------------------------------------------------------
 
-local board = {
-	{' ', ' ', ' '},
-	{' ', ' ', ' '},
-	{' ', ' ', ' '},
-}
-
 local score_table = {
 	['X'] = 0,
 	['0'] = 0,
 }
 
-local game_status, winning_dir, winning_xy = 'continue'
+local board       -- {y -> {x -> 'X'|'0'|' '}}
+local game_status -- 'continue', 'won', 'draw'
+local winning_dir -- 'vertical', 'horizontal', 'diagonal1', 'diagonal2'
+local winning_xy  --
+local last_move   --
 
 local function f(symbol)
 	if symbol == ' ' then
@@ -87,18 +85,39 @@ local function check_status()
 	end
 
 	--nu mai e loc pe tabla si nici nu s-a castigat
-	return 'remiza'
+	return 'draw'
 
 end
 
 local function play_round(x, y, symbol) --'X', '0'
+	if game_status ~= 'continue' then
+		print'nu se poate'
+		return
+	end
 	if board[y][x] ~= ' ' then
 		print'nu se poate'
-	else
-		board[y][x] = symbol
+		return
 	end
+	board[y][x] = symbol
 	game_status, winning_dir, winning_xy = check_status()
+	if game_status == 'won' then
+		score_table[last_move] = score_table[last_move] + 1
+	end
 end
+
+local function restart_game()
+	board = {
+		{' ', ' ', ' '},
+		{' ', ' ', ' '},
+		{' ', ' ', ' '},
+	}
+	game_status = 'continue'
+	winning_dir = nil
+	winning_xy  = nil
+	last_move   = nil
+end
+
+restart_game()
 
 --utils ----------------------------------------------------------------------
 
@@ -154,6 +173,7 @@ local function map_point_to_game(x, y, x1, y1, w1, h1)
 end
 
 local mouse_x, mouse_y = 0, 0
+local left_mouse_button_pressed = false
 
 function win:repaint()
 
@@ -235,20 +255,55 @@ function win:repaint()
 
 	local x1, y1, w1, h1 = board_rectangle()
 
-	local function draw_zero(x, y)
+	local function draw_zero(x, y, r, g, b)
 		local cx, cy = map_point_to_window(x, y, x1, y1, w1, h1)
-		circle(cx, cy, 20, 15, 255, 255, 255)
+		circle(cx, cy, 20, 15, r, g, b)
 	end
 
-	local function draw_x(x, y)
+	local function draw_x(x, y, r, g, b)
 		local t = 50
 		local cx, cy = map_point_to_window(x, y, x1, y1, w1, h1)
 		local x2 = cx - t / 2
 		local y2 = cy - t / 2
-		diagonal1(x2, y2, t, 20, 255, 255, 255)
+		diagonal1(x2, y2, t, 20, r, g, b)
 		local x2 = cx + t / 2
-		diagonal2(x2, y2, t, 20, 255, 255, 255)
+		diagonal2(x2, y2, t, 20, r, g, b)
 	end
+
+	local function other_move(move)
+		if move == 'X' then
+			return '0'
+		else
+			return 'X'
+		end
+	end
+
+	--aici incepe controller-ul -----------------------------------------------
+
+	local mx, my = map_point_to_game(mouse_x, mouse_y, x1, y1, w1, h1)
+	local inside_board = (mx >= 1 and mx <= 3 and my >= 1 and my <= 3)
+
+	if left_mouse_button_pressed then
+		if inside_board then
+			if last_move == 'X' then
+				last_move = '0'
+			else
+				last_move = 'X'
+			end
+			play_round(mx, my, last_move)
+		end
+	end
+
+	local function text_extents(s)
+		local ext = cr:text_extents(s)
+		local ext_x = ext.x_bearing
+		local ext_y = ext.y_bearing
+		local ext_w = ext.width
+		local ext_h = ext.height
+		return ext_x, ext_y, ext_w, ext_h
+	end
+
+	--aici incepe View-ul -----------------------------------------------------
 
 	--stergem ecranul
 	rectangle(0, 0, bmp.w, bmp.h, 0, 0, 0)
@@ -261,19 +316,29 @@ function win:repaint()
 		hline(x1, y1 + y * (h1 / 3), w1, 1, 255, 255, 255)
 	end
 
+	--desenam piesa curenta de sub mouse
+	if inside_board and board[my][mx] == ' ' then
+		local current_move = other_move(last_move)
+		if current_move == 'X' then
+			draw_x(mx, my, 50, 50, 50)
+		elseif current_move == '0' then
+			draw_zero(mx, my, 50, 50, 50)
+		end
+	end
+
 	--desenam piesele
 	for x = 1, 3 do
 		for y = 1, 3 do
 			local v = board[y][x]
 			if v == 'X' then
-				draw_x(x, y)
+				draw_x(x, y, 255, 255, 255)
 			elseif v == '0' then
-				draw_zero(x, y)
+				draw_zero(x, y, 255, 255, 255)
 			end
 		end
 	end
 
-	--desenam starea jocului
+	--desenam linia aia rosie cand ai castigat
 	if game_status == 'won' then
 		if winning_dir == 'horizontal' then
 			local x, y = map_point_to_window(0.5, winning_xy, x1, y1, w1, h1)
@@ -290,33 +355,62 @@ function win:repaint()
 		end
 	end
 
+	cr:font_face('Arial', nil, 'bold')
+
+	--desenam textul pentru remiza
+	if game_status == 'draw' then
+		local s = 'R3MIZA'
+		cr:font_size(48)
+		local ex, ey, ew, eh = text_extents(s)
+		cr:rotate_around(x1 + w1 / 2, y1 + h1 / 2, -math.pi / 6)
+		local x, y = center_rect(ew, eh, x1, y1, w1, h1)
+		cr:move_to(x-ex, y-ey)
+		cr:rgb(1, 0, 0)
+		cr:show_text(s)
+		cr:identity_matrix()
+	end
+
+	--desenam butonul de restart
 	local x, y = 300, 100
 	local s = 'R3START'
-
-	cr:rgb(1, 1, 1)
 	cr:move_to(x, y)
-	cr:font_face('Arial', nil, 'bold')
 	cr:font_size(36)
-
-	--compute the bounding box of the text
-	local ext = cr:text_extents(s)
-	local ext_x = x + ext.x_bearing
-	local ext_y = y + ext.y_bearing
-	local ext_w = ext.width
-	local ext_h = ext.height
-
+	local ex, ey, ew, eh = text_extents(s)
 	local over_the_text = point_inside_rect(
 		mouse_x, mouse_y,
-		ext_x, ext_y, ext_w, ext_h)
-
+		x + ex, y + ey, ew, eh)
+	if game_status == 'continue' then
+		cr:rgb(.3, .3, .3)
+	else
+		cr:rgb(1, 1, 1)
+	end
 	if over_the_text then
-		cr:rgb(1, 1, 0)
+		if left_mouse_button_pressed then
+			restart_game()
+			cr:rgb(1, 0, 0)
+		else
+			cr:rgb(1, 1, 0)
+		end
 	end
 
 	cr:show_text(s)
 
+	--desenam tabela de scor
+	cr:rgb(.7, .7, .7)
+	cr:font_size(24)
+	for i, player in ipairs{'X', '0'} do
+		local score = score_table[player]
+		local y = 140 + (i-1) * 28
+		cr:move_to(300, y)
+		cr:show_text(player..':')
+		cr:move_to(350, y)
+		cr:show_text(tostring(score_table[player]))
+	end
+
 	--desenam mouse-ul
 	circle(mouse_x, mouse_y, 3, 3, 255, 255, 255)
+
+	left_mouse_button_pressed = false
 end
 
 function win:mousemove(x, y)
@@ -324,21 +418,20 @@ function win:mousemove(x, y)
 	self:invalidate()
 end
 
-local last_move
-
-function win:click(button, _, x, y)
-	local cw, ch = self:client_size()
-	local x1, y1, w1, h1 = board_rectangle()
-	local x, y = map_point_to_game(x, y, x1, y1, w1, h1)
-	if x >= 1 and x <= 3 and y >= 1 and y <= 3 then
-		if last_move == 'X' then
-			last_move = '0'
-		else
-			last_move = 'X'
-		end
-		play_round(x, y, last_move)
-		self:invalidate()
+function win:mousedown(button, x, y)
+	mouse_x, mouse_y = x, y
+	if button == 'left' then
+		left_mouse_button_pressed = true
 	end
+	self:invalidate()
+end
+
+function win:mouseup(button, x, y)
+	mouse_x, mouse_y = x, y
+	if button == 'left' then
+		left_mouse_button_pressed = false
+	end
+	self:invalidate()
 end
 
 app:run()
