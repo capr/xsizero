@@ -192,6 +192,7 @@ function win:repaint()
 		p[(y * bmp.w + x) * 4 + 2] = r
 		p[(y * bmp.w + x) * 4 + 1] = g
 		p[(y * bmp.w + x) * 4 + 0] = b
+		p[(y * bmp.w + x) * 4 + 3] = 0xff
 	end
 
 	local function rectangle(x0, y0, w, h, r, g, b)
